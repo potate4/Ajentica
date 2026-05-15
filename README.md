@@ -474,3 +474,18 @@ so the agent can answer follow-ups like:
 
 ---
 
+## AI tool usage disclosure
+
+Per the brief: this codebase was built with the assistance of AI (Claude
+Sonnet via Claude Code) for code generation, architectural sketching, and
+debugging. The author understands all submitted code, made the design
+decisions (provider abstraction via LiteLLM, AST-aware chunking strategy,
+4-agent crew composition, protocol-based extensibility), and verified the
+end-to-end behavior via the included `smoke_test.py`. No code was
+copy-pasted from external sources; any patterns adapted from public
+documentation (CrewAI, LiteLLM, ChromaDB) are attributable to those
+projects' own examples.
+
+---
+
+
