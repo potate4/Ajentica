@@ -36,10 +36,10 @@ export default function OptionsBar({ config, value, onChange }: Props) {
           title="Toggle between single agent (faster) and 4-agent crew (planner/researcher/module/synth)"
         />
         <Toggle
-          label="Stream tokens"
+          label="Live trace"
           checked={effectiveStreaming}
           onChange={() => setKey('enable_streaming', !effectiveStreaming)}
-          title="When on, the UI uses /api/chat/stream and renders tool events live"
+          title="When on, tool call events stream live as the agent works"
         />
         <Toggle
           label="Use chat memory"
