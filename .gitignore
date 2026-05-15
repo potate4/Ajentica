@@ -1,0 +1,25 @@
+# --- Secrets & local config ---
+.env
+.env.local
+
+# --- Data: cloned repo & vector store ---
+data/repo/
+data/chroma/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Editor / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+.venv/
