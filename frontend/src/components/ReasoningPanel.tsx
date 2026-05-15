@@ -39,12 +39,13 @@ function formatArgs(args: unknown): string {
   return String(args)
 }
 
-export default function ReasoningPanel({ events }: { events: TraceEvent[] }) {
-  const [open, setOpen] = useState(false)
+export default function ReasoningPanel({ events, live = false }: { events: TraceEvent[]; live?: boolean }) {
+  const [open, setOpen] = useState(live)
   const pairs = pairUp(events)
   const callCount = pairs.length
+  const agentEvents = events.filter(e => e.kind === 'agent_started' || e.kind === 'agent_finished')
 
-  if (callCount === 0) return null
+  if (callCount === 0 && agentEvents.length === 0) return null
 
   return (
     <div className="mt-3 overflow-hidden rounded-md border border-slate-800 bg-slate-950/40">
@@ -65,6 +66,14 @@ export default function ReasoningPanel({ events }: { events: TraceEvent[] }) {
             <polyline points="9 18 15 12 9 6" />
           </svg>
           {callCount} tool {callCount === 1 ? 'call' : 'calls'}
+          {agentEvents.length > 0 && (
+            <span className="text-slate-500">
+              · {agentEvents.filter(e => e.kind === 'agent_finished').length}/{agentEvents.filter(e => e.kind === 'agent_started').length} agents
+            </span>
+          )}
+          {live && (
+            <span className="ml-1 inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" title="Live" />
+          )}
         </span>
       </button>
       {open && (

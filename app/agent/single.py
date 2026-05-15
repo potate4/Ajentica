@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 
 from crewai import Agent, Crew, Process, Task
 
-from app.agent.base import AgentRunner, Citation, RunRequest, RunResult
+from app.agent._extract import extract_citations, looks_like_refusal
+from app.agent.base import AgentRunner, RunRequest, RunResult
 from app.agent.llm import make_llm
 from app.agent.tools.registry import build_tools
 from app.memory.base import MemoryStore, Turn
@@ -53,9 +53,6 @@ Rules you MUST follow:
 """
 
 
-CITATION_RE = re.compile(r"([\w./\\-]+\.[A-Za-z]{1,5}):(\d+)-(\d+)")
-
-
 def _build_task_description(question: str, history: str) -> str:
     sections = [
         "Answer the user's question about the indexed codebase. "
@@ -73,36 +70,6 @@ def _build_task_description(question: str, history: str) -> str:
         "  3. If no relevant evidence was found, give a one-line refusal and write 'Sources: none.'"
     )
     return "\n\n".join(sections)
-
-
-def _extract_citations(text: str) -> list[Citation]:
-    seen: set[tuple[str, int, int]] = set()
-    citations: list[Citation] = []
-    for m in CITATION_RE.finditer(text):
-        path = m.group(1).replace("\\", "/").lstrip("./")
-        try:
-            s, e = int(m.group(2)), int(m.group(3))
-        except ValueError:
-            continue
-        key = (path, s, e)
-        if key in seen:
-            continue
-        seen.add(key)
-        citations.append(Citation(path=path, start_line=s, end_line=e))
-    return citations
-
-
-def _looks_like_refusal(text: str) -> bool:
-    lowered = text.lower()
-    needles = (
-        "sources: none",
-        "could not find",
-        "no relevant evidence",
-        "outside the scope",
-        "not in this repository",
-        "unable to find",
-    )
-    return any(n in lowered for n in needles)
 
 
 class SingleAgentRunner(AgentRunner):
@@ -143,12 +110,13 @@ class SingleAgentRunner(AgentRunner):
             verbose=False,
         )
 
-    async def run(self, request: RunRequest) -> RunResult:
+    async def run(self, request: RunRequest, trace: LiveTrace | None = None) -> RunResult:
         history = ""
         if request.session_id:
             history = self.memory.context_summary(request.session_id)
 
-        trace = LiveTrace()
+        if trace is None:
+            trace = LiveTrace()
         crew = self._build_crew(request.question, history, trace)
 
         log.info("agent run started — question=%r", request.question[:120])
@@ -164,8 +132,8 @@ class SingleAgentRunner(AgentRunner):
             )
 
         answer = str(result).strip()
-        citations = _extract_citations(answer)
-        refused = _looks_like_refusal(answer) and not citations
+        citations = extract_citations(answer)
+        refused = looks_like_refusal(answer) and not citations
         events = trace.events()
         log.info("agent run finished — %d tool calls, %d citations, refused=%s",
                  sum(1 for e in events if e.kind == "tool_call"),

@@ -67,3 +67,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Lazy accessor so tests can monkey-patch env before import."""
     return Settings()
+
+
+# (touch this comment to trigger uvicorn --reload after changing .env)
+

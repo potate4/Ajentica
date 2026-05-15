@@ -8,7 +8,7 @@ agent's reasoning. In core mode the collector is `NullTrace` (no-op).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 
 
 @dataclass
@@ -41,6 +41,11 @@ class RunResult:
 
 
 class AgentRunner(Protocol):
-    """Anything that can answer one question."""
+    """Anything that can answer one question.
 
-    async def run(self, request: RunRequest) -> RunResult: ...
+    `trace` is optional: if omitted, the runner creates its own LiveTrace and
+    returns events in the result. The streaming endpoint passes a QueueTrace
+    instead, so events also fan out to an asyncio queue as they fire.
+    """
+
+    async def run(self, request: RunRequest, trace: Any | None = None) -> RunResult: ...

@@ -3,8 +3,8 @@ import Header from './components/Header'
 import OptionsBar from './components/OptionsBar'
 import MessageList from './components/MessageList'
 import Composer from './components/Composer'
-import { getConfig, getHealth, sendChat } from './api'
-import type { AppConfig, HealthStatus, Message } from './types'
+import { getConfig, getHealth, sendChat, streamChat } from './api'
+import type { AppConfig, HealthStatus, Message, TraceEvent } from './types'
 
 function App() {
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -15,69 +15,79 @@ function App() {
   const [requestOptions, setRequestOptions] = useState<Record<string, unknown>>({})
 
   useEffect(() => {
-    getConfig().then(setConfig).catch(() => {
-      // Backend unreachable — UI degrades gracefully.
-    })
-    refreshHealth()
+    getConfig().then(setConfig).catch(() => {})
+    getHealth().then(setHealth).catch(() => {})
   }, [])
 
-  function refreshHealth() {
-    getHealth().then(setHealth).catch(() => {})
+  function patchPending(pendingId: string, patch: (m: Message) => Message) {
+    setMessages(curr => curr.map(m => (m.id === pendingId ? patch(m) : m)))
   }
 
   async function handleSend(question: string) {
     if (!question.trim() || sending) return
 
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: question,
-    }
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: question }
     const pendingId = crypto.randomUUID()
     const pendingMsg: Message = {
       id: pendingId,
       role: 'assistant',
       content: '',
       pending: true,
+      events: [],
     }
     setMessages(m => [...m, userMsg, pendingMsg])
     setSending(true)
 
+    const opts = Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    const useStream = config?.enable_streaming === true
+
     try {
-      const res = await sendChat({
-        question,
-        session_id: sessionId,
-        options: Object.keys(requestOptions).length > 0 ? requestOptions : undefined,
-      })
-      setSessionId(res.session_id)
-      setMessages(m =>
-        m.map(msg =>
-          msg.id === pendingId
-            ? {
-                ...msg,
+      if (useStream) {
+        await streamChat(
+          { question, session_id: sessionId, options: opts },
+          {
+            onSession: id => setSessionId(id),
+            onTrace: (e: TraceEvent) =>
+              patchPending(pendingId, m => ({ ...m, events: [...(m.events ?? []), e] })),
+            onDone: r => {
+              setSessionId(r.session_id)
+              patchPending(pendingId, m => ({
+                ...m,
                 pending: false,
-                content: res.answer,
-                citations: res.citations,
-                events: res.events,
-                refused: res.refused,
-              }
-            : msg,
-        ),
-      )
-    } catch (e: unknown) {
-      const err = e instanceof Error ? e.message : String(e)
-      setMessages(m =>
-        m.map(msg =>
-          msg.id === pendingId
-            ? {
-                ...msg,
+                content: r.answer,
+                citations: r.citations,
+                refused: r.refused,
+              }))
+            },
+            onError: err =>
+              patchPending(pendingId, m => ({
+                ...m,
                 pending: false,
                 content: `**Error:** ${err}`,
                 error: true,
-              }
-            : msg,
-        ),
-      )
+              })),
+          },
+        )
+      } else {
+        const res = await sendChat({ question, session_id: sessionId, options: opts })
+        setSessionId(res.session_id)
+        patchPending(pendingId, m => ({
+          ...m,
+          pending: false,
+          content: res.answer,
+          citations: res.citations,
+          events: res.events,
+          refused: res.refused,
+        }))
+      }
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e.message : String(e)
+      patchPending(pendingId, m => ({
+        ...m,
+        pending: false,
+        content: `**Error:** ${err}`,
+        error: true,
+      }))
     } finally {
       setSending(false)
     }

@@ -11,6 +11,7 @@ at the root path with SPA fallback. Otherwise `/` returns instructions.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,8 @@ from app.agent.base import RunRequest
 from app.factory import build_context
 from app.ingest.store import get_client, get_or_create_collection
 from app.settings import PROJECT_ROOT, get_settings
+from app.streaming.sse import sse
+from app.trace.queue import QueueTrace
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +154,69 @@ async def chat(req: ChatRequest) -> ChatResponse:
         session_id=session_id,
         events=[TraceEventOut(kind=e.kind, payload=e.payload) for e in result.events],
     )
+
+
+# ---- Streaming chat (SSE) — bonus -------------------------------------
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """Server-sent-event variant of /api/chat.
+
+    Tool events stream live as they fire. The final answer + citations ship
+    as a single `done` event when the agent finishes.
+
+    Event types:
+      session  — { session_id }                          (first event)
+      trace    — { kind, payload }                       (per tool/agent step)
+      done     — { answer, citations, refused, ... }    (last event)
+      error    — { error }                               (terminal on failure)
+    """
+    if not req.question.strip():
+        raise HTTPException(400, "question must not be blank")
+
+    session_id = req.session_id or str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    trace = QueueTrace(loop, queue)
+
+    run_req = RunRequest(
+        question=req.question, session_id=session_id, options=req.options or {},
+    )
+    runner_task = asyncio.create_task(ctx.runner.run(run_req, trace=trace))
+
+    async def event_stream():
+        yield sse("session", {"session_id": session_id})
+
+        # Drain trace events until the runner finishes AND the queue is empty.
+        while not runner_task.done() or not queue.empty():
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            yield sse("trace", {"kind": event.kind, "payload": event.payload})
+
+        try:
+            result = runner_task.result()
+        except Exception as e:
+            log.exception("streaming agent run failed")
+            yield sse("error", {"error": f"{type(e).__name__}: {e}"})
+            return
+
+        yield sse("done", {
+            "answer": result.answer,
+            "citations": [
+                {"path": c.path, "start_line": c.start_line, "end_line": c.end_line}
+                for c in result.citations
+            ],
+            "refused": result.refused,
+            "session_id": session_id,
+        })
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
+    })
 
 
 # ---- Static (built React app, optional in dev) -------------------------
