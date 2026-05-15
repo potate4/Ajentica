@@ -39,7 +39,12 @@ function App() {
     setSending(true)
 
     const opts = Object.keys(requestOptions).length > 0 ? requestOptions : undefined
-    const useStream = config?.enable_streaming === true
+    // Per-request override beats server default. This is what makes the
+    // "Stream tokens" toggle actually switch endpoints.
+    const useStream =
+      (requestOptions.enable_streaming as boolean | undefined)
+      ?? config?.enable_streaming
+      ?? false
 
     try {
       if (useStream) {

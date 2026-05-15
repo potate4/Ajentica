@@ -132,6 +132,15 @@ async def get_config() -> ConfigResponse:
     )
 
 
+def _pick_runner(options: dict[str, Any] | None):
+    """Resolve which runner to use: per-request options first, else server default."""
+    opts = options or {}
+    mode = opts.get("agent_mode") or ctx.settings.agent_mode
+    if mode not in ctx.runners:
+        mode = "single"
+    return ctx.runners[mode], mode
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     if not req.question.strip():
@@ -143,7 +152,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
         session_id=session_id,
         options=req.options or {},
     )
-    result = await ctx.runner.run(run_req)
+    runner, mode = _pick_runner(req.options)
+    log.info("/api/chat — runner=%s, session=%s", mode, session_id[:8])
+    result = await runner.run(run_req)
     return ChatResponse(
         answer=result.answer,
         citations=[
@@ -183,7 +194,9 @@ async def chat_stream(req: ChatRequest):
     run_req = RunRequest(
         question=req.question, session_id=session_id, options=req.options or {},
     )
-    runner_task = asyncio.create_task(ctx.runner.run(run_req, trace=trace))
+    runner, mode = _pick_runner(req.options)
+    log.info("/api/chat/stream — runner=%s, session=%s", mode, session_id[:8])
+    runner_task = asyncio.create_task(runner.run(run_req, trace=trace))
 
     async def event_stream():
         yield sse("session", {"session_id": session_id})

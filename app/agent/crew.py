@@ -272,8 +272,11 @@ class CrewRunner(AgentRunner):
         )
 
     async def run(self, request: RunRequest, trace: LiveTrace | None = None) -> RunResult:
+        use_memory = bool(request.options.get(
+            "enable_session_memory", self.settings.enable_session_memory,
+        ))
         history = ""
-        if request.session_id:
+        if use_memory and request.session_id:
             history = self.memory.context_summary(request.session_id)
 
         if trace is None:
@@ -304,7 +307,7 @@ class CrewRunner(AgentRunner):
             refused,
         )
 
-        if request.session_id:
+        if use_memory and request.session_id:
             self.memory.append(request.session_id, Turn(role="user", content=request.question))
             self.memory.append(request.session_id, Turn(role="assistant", content=answer))
 

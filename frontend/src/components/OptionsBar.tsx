@@ -7,51 +7,65 @@ type Props = {
 }
 
 /**
- * Per-request bonus toggles. Only renders if the backend reports that at
- * least one bonus is available. In core mode (Phase 1, all bonuses off) this
- * component renders nothing.
+ * Per-request overrides. Reads the effective state for each toggle as
+ * "explicit override (if set) else server default", and writes back the
+ * negation on click. This way the FIRST click always flips the visible
+ * state, and the toggle actually controls behavior on the next request.
  */
 export default function OptionsBar({ config, value, onChange }: Props) {
-  const anyBonus =
-    config.enable_streaming ||
-    config.enable_reasoning_trace ||
-    config.enable_session_memory ||
-    config.agent_mode === 'crew'
+  const effectiveCrew = (value.agent_mode as string | undefined) === 'crew'
+    || ((value.agent_mode as string | undefined) === undefined && config.agent_mode === 'crew')
+  const effectiveStreaming = (value.enable_streaming as boolean | undefined)
+    ?? config.enable_streaming
+  const effectiveMemory = (value.enable_session_memory as boolean | undefined)
+    ?? config.enable_session_memory
 
-  if (!anyBonus) return null
-
-  function toggle(key: string) {
-    onChange({ ...value, [key]: !value[key] })
+  function setKey(key: string, val: unknown) {
+    onChange({ ...value, [key]: val })
   }
 
   return (
     <div className="border-b border-slate-800/60 bg-slate-950/40">
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-6 py-2 text-xs text-slate-400">
         <span className="font-medium uppercase tracking-wide text-slate-500">Per-request</span>
-        {config.enable_reasoning_trace && (
-          <Toggle label="Show reasoning" checked={value.enable_reasoning_trace !== false} onChange={() => toggle('enable_reasoning_trace')} />
-        )}
-        {config.enable_streaming && (
-          <Toggle label="Stream tokens" checked={value.enable_streaming !== false} onChange={() => toggle('enable_streaming')} />
-        )}
-        {config.enable_session_memory && (
-          <Toggle label="Use chat memory" checked={value.enable_session_memory !== false} onChange={() => toggle('enable_session_memory')} />
-        )}
-        {config.agent_mode === 'crew' && (
-          <Toggle
-            label="Multi-agent crew"
-            checked={value.agent_mode !== 'single'}
-            onChange={() => onChange({ ...value, agent_mode: value.agent_mode === 'single' ? 'crew' : 'single' })}
-          />
+
+        <Toggle
+          label="Multi-agent crew"
+          checked={effectiveCrew}
+          onChange={() => setKey('agent_mode', effectiveCrew ? 'single' : 'crew')}
+          title="Toggle between single agent (faster) and 4-agent crew (planner/researcher/module/synth)"
+        />
+        <Toggle
+          label="Stream tokens"
+          checked={effectiveStreaming}
+          onChange={() => setKey('enable_streaming', !effectiveStreaming)}
+          title="When on, the UI uses /api/chat/stream and renders tool events live"
+        />
+        <Toggle
+          label="Use chat memory"
+          checked={effectiveMemory}
+          onChange={() => setKey('enable_session_memory', !effectiveMemory)}
+          title="When on, prior turns in this session are surfaced to the agent"
+        />
+
+        {Object.keys(value).length > 0 && (
+          <button
+            onClick={() => onChange({})}
+            className="ml-auto text-[11px] text-slate-500 underline-offset-2 hover:text-slate-300 hover:underline"
+          >
+            reset to server defaults
+          </button>
         )}
       </div>
     </div>
   )
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function Toggle({
+  label, checked, onChange, title,
+}: { label: string; checked: boolean; onChange: () => void; title?: string }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-1.5 select-none">
+    <label className="inline-flex cursor-pointer items-center gap-1.5 select-none" title={title}>
       <input
         type="checkbox"
         checked={checked}
