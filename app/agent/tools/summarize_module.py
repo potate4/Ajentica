@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 from chromadb.api.models.Collection import Collection
 from crewai.tools import tool
 from litellm import completion
+
+from app.agent.tools._common import trace_tool
+from app.trace.base import TraceCollector
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +31,6 @@ MAX_CHUNK_CHARS = 1500
 def _gather_chunks(coll: Collection, name: str) -> list[dict]:
     parts = name.split(".")
 
-    # Strategy 1 — file-path candidates
     candidates: list[str] = []
     for prefix in ("", "src/"):
         joined = "/".join(parts)
@@ -43,11 +44,9 @@ def _gather_chunks(coll: Collection, name: str) -> list[dict]:
             res = coll.get(where={"path": path}, limit=MAX_CONTEXT_CHUNKS)
         except Exception:
             continue
-        ids = res.get("ids") or []
-        if ids:
+        if res.get("ids"):
             return _zip_get(res)
 
-    # Strategy 2 — symbol match (e.g., "Flask" or "Flask.run")
     try:
         res = coll.get(where={"symbol": name}, limit=MAX_CONTEXT_CHUNKS)
         if res.get("ids"):
@@ -55,7 +54,6 @@ def _gather_chunks(coll: Collection, name: str) -> list[dict]:
     except Exception:
         pass
 
-    # Strategy 3 — semantic search
     try:
         res = coll.query(query_texts=[f"module or class {name}"], n_results=MAX_CONTEXT_CHUNKS)
         return _zip_query(res)
@@ -76,7 +74,13 @@ def _zip_query(res: dict) -> list[dict]:
     return [{"text": d, **(m or {})} for d, m in zip(docs, metas)]
 
 
-def build_summarize_module_tool(coll: Collection, model: str, temperature: float, timeout: int):
+def build_summarize_module_tool(
+    coll: Collection,
+    model: str,
+    temperature: float,
+    timeout: int,
+    trace: TraceCollector | None = None,
+):
     @tool("summarize_module")
     def summarize_module(name: str) -> str:
         """Produce a plain-English summary of a Python module or class.
@@ -92,52 +96,54 @@ def build_summarize_module_tool(coll: Collection, model: str, temperature: float
         RETURNS: JSON {name, summary, sources: [{path, start_line, end_line}]}
                  or {error} if no matching code is found.
         """
-        chunks = _gather_chunks(coll, name)
-        if not chunks:
-            return json.dumps({
-                "error": f"no chunks found for '{name}'. Try search_code first to discover the right name."
-            })
+        def _run() -> str:
+            chunks = _gather_chunks(coll, name)
+            if not chunks:
+                return json.dumps({
+                    "error": f"no chunks found for '{name}'. Try search_code first."
+                })
 
-        sources = [
-            {
+            sources = [{
                 "path": c.get("path"),
                 "start_line": c.get("start_line"),
                 "end_line": c.get("end_line"),
                 "symbol": c.get("symbol"),
                 "kind": c.get("kind"),
-            }
-            for c in chunks
-        ]
+            } for c in chunks]
 
-        ctx_blocks = []
-        for c in chunks[:MAX_CONTEXT_CHUNKS]:
-            text = (c.get("text") or "")[:MAX_CHUNK_CHARS]
-            ctx_blocks.append(f"--- {c.get('path')}:{c.get('start_line')}-{c.get('end_line')} ({c.get('kind')}: {c.get('symbol')}) ---\n{text}")
+            ctx_blocks = []
+            for c in chunks[:MAX_CONTEXT_CHUNKS]:
+                text = (c.get("text") or "")[:MAX_CHUNK_CHARS]
+                ctx_blocks.append(
+                    f"--- {c.get('path')}:{c.get('start_line')}-{c.get('end_line')} "
+                    f"({c.get('kind')}: {c.get('symbol')}) ---\n{text}"
+                )
 
-        prompt = (
-            f"Summarize the following code unit named '{name}' in 5-7 concise bullet points. "
-            "Cover: purpose, key classes/functions, important external dependencies, "
-            "and how it relates to the rest of the codebase based on what you can see. "
-            "Do not invent details that are not in the snippets.\n\n"
-            + "\n\n".join(ctx_blocks)
-        )
-
-        try:
-            resp = completion(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                timeout=timeout,
+            prompt = (
+                f"Summarize the following code unit named '{name}' in 5-7 concise bullet points. "
+                "Cover: purpose, key classes/functions, important external dependencies, "
+                "and how it relates to the rest of the codebase based on what you can see. "
+                "Do not invent details that are not in the snippets.\n\n"
+                + "\n\n".join(ctx_blocks)
             )
-            summary = resp.choices[0].message.content.strip()
-        except Exception as e:
-            log.exception("summarize_module LLM call failed")
-            return json.dumps({"error": f"LLM call failed: {e}", "sources": sources})
 
-        return json.dumps({
-            "name": name,
-            "summary": summary,
-            "sources": sources,
-        }, ensure_ascii=False)
+            try:
+                resp = completion(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    timeout=timeout,
+                )
+                summary = resp.choices[0].message.content.strip()
+            except Exception as e:
+                return json.dumps({"error": f"LLM call failed: {e}", "sources": sources})
+
+            return json.dumps({
+                "name": name,
+                "summary": summary,
+                "sources": sources,
+            }, ensure_ascii=False)
+
+        return trace_tool("summarize_module", {"name": name}, _run, trace=trace)
 
     return summarize_module

@@ -40,7 +40,7 @@ export default function MessageBubble({ message, config }: Props) {
             <div className={`markdown-body text-sm ${message.error ? 'text-rose-300' : 'text-slate-200'}`}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             </div>
-            {config?.enable_reasoning_trace && message.events && message.events.length > 0 && (
+            {message.events && message.events.length > 0 && (
               <ReasoningPanel events={message.events} />
             )}
             {config && message.citations && message.citations.length > 0 && (
