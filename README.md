@@ -13,7 +13,7 @@ streaming, in-memory chat context), each behind its own feature flag.
 
 ## Demo
 
-> **Watch the demo video:** _[link to your recording]_
+> **Watch the demo video:** [https://youtu.be/YtVyC5kCcm0](https://youtu.be/YtVyC5kCcm0)
 
 ---
 
