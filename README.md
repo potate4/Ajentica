@@ -437,12 +437,10 @@ so the agent can answer follow-ups like:
 
 ## Screenshots
 
-```
 ![Empty state](docs/screenshots/empty-state.png)
 ![Cited answer with reasoning trace](docs/screenshots/cited-answer.png)
 ![Streaming in progress](docs/screenshots/streaming.png)
 ![Multi-turn memory](docs/screenshots/memory.png)
-```
 
 ---
 
