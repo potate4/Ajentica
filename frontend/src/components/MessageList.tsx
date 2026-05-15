@@ -6,6 +6,7 @@ type Props = {
   messages: Message[]
   config: AppConfig | null
   health: HealthStatus | null
+  onSelectExample?: (q: string) => void
 }
 
 const EXAMPLES = [
@@ -15,7 +16,7 @@ const EXAMPLES = [
   "What's the entry point when you call app.run()?",
 ]
 
-export default function MessageList({ messages, config, health }: Props) {
+export default function MessageList({ messages, config, health, onSelectExample }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function MessageList({ messages, config, health }: Props) {
     <div className="h-full overflow-y-auto" ref={scrollerRef}>
       {messages.length === 0 ? (
         <div className="mx-auto flex h-full max-w-3xl items-center justify-center px-6 py-10">
-          <EmptyState health={health} config={config} />
+          <EmptyState health={health} config={config} onSelectExample={onSelectExample} />
         </div>
       ) : (
         <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-6">
@@ -40,7 +41,7 @@ export default function MessageList({ messages, config, health }: Props) {
   )
 }
 
-function EmptyState({ health, config }: { health: HealthStatus | null; config: AppConfig | null }) {
+function EmptyState({ health, config, onSelectExample }: { health: HealthStatus | null; config: AppConfig | null; onSelectExample?: (q: string) => void }) {
   if (health && !health.ingested) {
     return (
       <div className="max-w-md rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-6 text-center">
@@ -71,12 +72,13 @@ function EmptyState({ health, config }: { health: HealthStatus | null; config: A
       </p>
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
         {EXAMPLES.map(e => (
-          <div
+          <button
             key={e}
-            className="rounded-lg border border-slate-800 bg-slate-900/50 px-3.5 py-2.5 text-sm text-slate-300"
+            onClick={() => onSelectExample?.(e)}
+            className="rounded-lg border border-slate-800 bg-slate-900/50 px-3.5 py-2.5 text-left text-sm text-slate-300 transition hover:border-indigo-500/40 hover:bg-slate-800/60 hover:text-slate-100"
           >
             {e}
-          </div>
+          </button>
         ))}
       </div>
     </div>

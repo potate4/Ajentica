@@ -13,6 +13,7 @@ function App() {
   const [sessionId, setSessionId] = useState<string | undefined>(undefined)
   const [sending, setSending] = useState(false)
   const [requestOptions, setRequestOptions] = useState<Record<string, unknown>>({})
+  const [composerValue, setComposerValue] = useState('')
 
   useEffect(() => {
     getConfig().then(setConfig).catch(() => {})
@@ -110,10 +111,12 @@ function App() {
         <OptionsBar config={config} value={requestOptions} onChange={setRequestOptions} />
       )}
       <main className="min-h-0 flex-1 overflow-hidden">
-        <MessageList messages={messages} config={config} health={health} />
+        <MessageList messages={messages} config={config} health={health} onSelectExample={setComposerValue} />
       </main>
       <Composer
-        onSend={handleSend}
+        onSend={q => { handleSend(q); setComposerValue('') }}
+        value={composerValue}
+        onValueChange={setComposerValue}
         disabled={sending || (health !== null && !health.ingested)}
         placeholder={
           health && !health.ingested

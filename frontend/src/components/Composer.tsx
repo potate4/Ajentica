@@ -4,10 +4,17 @@ type Props = {
   onSend: (q: string) => void
   disabled?: boolean
   placeholder?: string
+  value?: string
+  onValueChange?: (v: string) => void
 }
 
-export default function Composer({ onSend, disabled, placeholder }: Props) {
-  const [value, setValue] = useState('')
+export default function Composer({ onSend, disabled, placeholder, value: externalValue, onValueChange }: Props) {
+  const [internalValue, setInternalValue] = useState('')
+  const value = externalValue !== undefined ? externalValue : internalValue
+  const setValue = (v: string) => {
+    setInternalValue(v)
+    onValueChange?.(v)
+  }
   const ref = useRef<HTMLTextAreaElement>(null)
 
   // Auto-grow textarea up to a max height
